@@ -219,3 +219,72 @@ import { usePathname } from 'next/navigation';
 - Create and link your project to a Postgres database.
 
 - Seed the database with initial data.
+
+By connecting your GitHub repository, whenever you push changes to your main branch, Vercel will automatically redeploy your application with no configuration needed. When opening pull requests, you'll also have instant previews which allow you to catch deployment errors early and share a preview of your project with team members for feedback.
+
+If you have created a pull or merge request when using Git, the generated preview URL will be available as a comment from the Vercel bot. This URL will always reflect the latest deployment changes.
+
+pnpm i @vercel/postgres
+
+Inside of /app, there's a folder called seed. Uncomment this file. This folder contains a Next.js Route Handler, called route.ts, that will be used to seed your database. This creates a server-side endpoint that you can access in the browser to start populating your database.
+
+Don't worry if you don't understand everything the code is doing, but to give you an overview, the script uses SQL to create the tables, and the data from placeholder-data.ts file to populate them after they've been created.
+
+Ensure your local development server is running with pnpm run dev and navigate to localhost:3000/seed in your browser. When finished, you will see a message "Database seeded successfully" in the browser. Once completed, you can delete this file.
+
+It’s time to take a quiz!
+Test your knowledge and see what you’ve just learned.
+
+# Part 7
+
+- Learn about some approaches to fetching data: APIs, ORMs, SQL, etc.
+
+- How Server Components can help you access back-end resources more securely.
+
+- What network waterfalls are.
+
+- How to implement parallel data fetching using a JavaScript Pattern.
+
+In Next.js, you can create API endpoints using Route Handlers.
+
+There are a few cases where you have to write database queries:
+
+- When creating your API endpoints, you need to write logic to interact with your database.
+
+- If you are using React Server Components (fetching data on the server), you can skip the API layer, and query your database directly without risking exposing your database secrets to the client.
+
+### React server components
+
+By default, Next.js applications use React Server Components. Fetching data with Server Components is a relatively new approach and there are a few benefits of using them:
+
+- Server Components support promises, providing a simpler solution for asynchronous tasks like data fetching. You can use async/await syntax without reaching out for useEffect, useState or data fetching libraries.
+- Server Components execute on the server, so you can keep expensive data fetches and logic on the server and only send the result to the client.
+- As mentioned before, since Server Components execute on the server, you can query the database directly without an additional API layer.
+
+- The Vercel Postgres SDK provides protection against SQL injections.
+
+### Problems...
+
+However... there are two things you need to be aware of:
+
+1. The data requests are unintentionally blocking each other, creating a request waterfall.
+
+- For example, we need to wait for fetchRevenue() to execute before fetchLatestInvoices() can start running, and so on.
+
+- A common way to avoid waterfalls is to initiate all data requests at the same time - in parallel.
+
+- In JavaScript, you can use the Promise.all() or Promise.allSettled() functions to initiate all promises at the same time. For example, in data.ts, we're using Promise.all() in the fetchCardData() function
+
+- However, there is one disadvantage of relying only on this JavaScript pattern: what happens if one data request is slower than all the others?
+
+2. By default, Next.js prerenders routes to improve performance, this is called Static Rendering. So if your data changes, it won't be reflected in your dashboard.
+
+# Part 8
+
+- What static rendering is and how it can improve your application's performance.
+
+- What dynamic rendering is and when to use it.
+
+- Different approaches to make your dashboard dynamic.
+
+- Simulate a slow data fetch to see what happens.
