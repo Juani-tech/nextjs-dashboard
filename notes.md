@@ -288,3 +288,156 @@ However... there are two things you need to be aware of:
 - Different approaches to make your dashboard dynamic.
 
 - Simulate a slow data fetch to see what happens.
+
+## Static rendering
+
+With static rendering, data fetching and rendering happens on the server at build time (when you deploy) or when revalidating data.
+
+Benefits:
+
+- Faster Websites - Prerendered content can be cached and globally distributed. This ensures that users around the world can access your website's content more quickly and reliably.
+- Reduced Server Load - Because the content is cached, your server does not have to dynamically generate content for each user request.
+- SEO - Prerendered content is easier for search engine crawlers to index, as the content is already available when the page loads. This can lead to improved search engine rankings.
+
+Static rendering is useful for UI with no data or data that is shared across users, such as a static blog post or a product page. It might not be a good fit for a dashboard that has personalized data which is regularly updated.
+
+The opposite of static rendering is dynamic rendering.
+
+## Dinamic rendering
+
+With dynamic rendering, content is rendered on the server for each user at request time (when the user visits the page). There are a couple of benefits of dynamic rendering:
+
+- Real-Time Data - Dynamic rendering allows your application to display real-time or frequently updated data. This is ideal for applications where data changes often.
+- User-Specific Content - It's easier to serve personalized content, such as dashboards or user profiles, and update the data based on user interaction.
+- Request Time Information - Dynamic rendering allows you to access information that can only be known at request time, such as cookies or the URL search parameters.
+
+Here, you've added an artificial 3-second delay to simulate a slow data fetch. The result is that now your whole page is blocked from showing UI to the visitor while the data is being fetched. Which brings us to a common challenge developers have to solve:
+
+With dynamic rendering, your application is only as fast as your slowest data fetch.
+
+# Part 9, streaming
+
+- What streaming is and when you might use it.
+
+- How to implement streaming with loading.tsx and Suspense.
+
+- What loading skeletons are.
+
+- What route groups are, and when you might use them.
+
+- Where to place Suspense boundaries in your application.
+
+### What is streaming?
+
+Streaming is a data transfer technique that allows you to break down a route into smaller "chunks" and progressively stream them from the server to the client as they become ready.
+
+By streaming, you can prevent slow data requests from blocking your whole page. This allows the user to see and interact with parts of the page without waiting for all the data to load before any UI can be shown to the user.
+
+There are two ways you implement streaming in Next.js:
+
+At the page level, with the loading.tsx file.
+For specific components, with <Suspense>.
+
+A few things are happening here:
+
+- loading.tsx is a special Next.js file built on top of Suspense, it allows you to create fallback UI to show as a replacement while page content loads.
+- Since <SideNav> is static, it's shown immediately. The user can interact with <SideNav> while the dynamic content is loading.
+- The user doesn't have to wait for the page to finish loading before navigating away (this is called interruptable navigation).
+
+### Loading Skeletons
+
+Adding loading skeletons
+A loading skeleton is a simplified version of the UI. Many websites use them as a placeholder (or fallback) to indicate to users that the content is loading. Any UI you add in loading.tsx will be embedded as part of the static file, and sent first. Then, the rest of the dynamic content will be streamed from the server to the client.
+
+## Route groups
+
+Right now, your loading skeleton will apply to the invoices and customers pages as well.
+
+Since loading.tsx is a level higher than /invoices/page.tsx and /customers/page.tsx in the file system, it's also applied to those pages.
+
+We can change this with Route Groups. Create a new folder called /(overview) inside the dashboard folder. Then, move your loading.tsx and page.tsx files inside the folder:
+
+Now, the loading.tsx file will only apply to your dashboard overview page.
+
+Route groups allow you to organize files into logical groups without affecting the URL path structure. When you create a new folder using parentheses (), the name won't be included in the URL path. So /dashboard/(overview)/page.tsx becomes /dashboard.
+
+Here, you're using a route group to ensure loading.tsx only applies to your dashboard overview page. However, you can also use route groups to separate your application into sections (e.g. (marketing) routes and (shop) routes) or by teams for larger applications.
+
+## Streaming a component
+
+So far, you're streaming a whole page. But you can also be more granular and stream specific components using React Suspense.
+
+Suspense allows you to defer rendering parts of your application until some condition is met (e.g. data is loaded). You can wrap your dynamic components in Suspense. Then, pass it a fallback component to show while the dynamic component loads.
+
+If you remember the slow data request, fetchRevenue(), this is the request that is slowing down the whole page. Instead of blocking your whole page, you can use Suspense to stream only this component and immediately show the rest of the page's UI.
+
+To do so, you'll need to move the data fetch to the component, let's update the code to see what that'll look like
+
+## Wrapper pattern
+
+now you need to wrap the <Card> components in Suspense. You can fetch data for each individual card, but this could lead to a popping effect as the cards load in, this can be visually jarring for the user.
+
+So, how would you tackle this problem?
+
+To create more of a staggered effect, you can group the cards using a wrapper component. This means the static <SideNav/> will be shown first, followed by the cards, etc.
+
+- You could stream the whole page like we did with loading.tsx... but that may lead to a longer loading time if one of the components has a slow data fetch.
+- You could stream every component individually... but that may lead to UI popping into the screen as it becomes ready.
+- You could also create a staggered effect by streaming page sections. But you'll need to create wrapper components.
+
+Where you place your suspense boundaries will vary depending on your application. In general, it's good practice to move your data fetches down to the components that need it, and then wrap those components in Suspense. But there is nothing wrong with streaming the sections or the whole page if that's what your application needs.
+
+# Part 10, partial rendering
+
+- Es como una combinacion entre static y dynamic rendering
+
+However, most routes are not fully static or dynamic. For example, consider an ecommerce site. You might want to statically render the majority of the product information page, but you may want to fetch the user's cart and recommended products dynamically, this allows you show personalized content to your users.
+
+Next.js 14 introduced an experimental version of Partial Prerendering – a new rendering model that allows you to combine the benefits of static and dynamic rendering in the same route. For example:
+
+When a user visits a route:
+
+- A static route shell that includes the navbar and product information is served, ensuring a fast initial load.
+- The shell leaves holes where dynamic content like the cart and recommended products will load in asynchronously.
+- The async holes are streamed in parallel, reducing the overall load time of the page.
+
+How does Partial Prerendering work?
+Partial Prerendering uses React's Suspense (which you learned about in the previous chapter) to defer rendering parts of your application until some condition is met (e.g. data is loaded).
+
+The Suspense fallback is embedded into the initial HTML file along with the static content. At build time (or during revalidation), the static content is prerendered to create a static shell. The rendering of dynamic content is postponed until the user requests the route.
+
+Implementing Partial Prerendering
+Enable PPR for your Next.js app by adding the ppr option to your next.config.mjs file
+
+```
+/** @type {import('next').NextConfig} */
+
+const nextConfig = {
+  experimental: {
+    ppr: 'incremental',
+  },
+};
+
+export default nextConfig;
+```
+
+Next, add the experimental_ppr segment config option to your dashboard layout
+
+That's it. You may not see a difference in your application in development, but you should notice a performance improvement in production. Next.js will prerender the static parts of your route and defer the dynamic parts until the user requests them.
+
+The great thing about Partial Prerendering is that you don't need to change your code to use it. As long as you're using Suspense to wrap the dynamic parts of your route, Next.js will know which parts of your route are static and which are dynamic.
+
+### Optimizing summary
+
+- Created a database in the same region as your application code to reduce latency between your server and database.
+- Fetched data on the server with React Server Components. This allows you to keep expensive data fetches and logic on the server, reduces the client-side JavaScript bundle, and prevents your database secrets from being exposed to the client.
+- Used SQL to only fetch the data you needed, reducing the amount of data transferred for each request and the amount of JavaScript needed to transform the data in-memory.
+- Parallelize data fetching with JavaScript - where it made sense to do so.
+- Implemented Streaming to prevent slow data requests from blocking your whole page, and to allow the user to start interacting with the UI without waiting for everything to load.
+- Move data fetching down to the components that need it, thus isolating which parts of your routes should be dynamic.
+
+# Part 11, Search and pagination
+
+- Learn how to use the Next.js APIs: useSearchParams, usePathname, and useRouter.
+
+- Implement search and pagination using URL search params.
