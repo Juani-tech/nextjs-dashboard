@@ -176,9 +176,9 @@ A root layout and is required. Any UI you add to the root layout will be shared 
 
 - How navigation works in Next.js.
 
-In Next.js, you can use the <Link /> Component to link between pages in your application. <Link> allows you to do client-side navigation with JavaScript.
+In Next.js, you can use the <Link /> Component to link between pages in your application. Link allows you to do client-side navigation with JavaScript.
 
-To use the <Link /> component, open /app/ui/dashboard/nav-links.tsx, and import the Link component from next/link. Then, replace the <a> tag with <Link>:
+To use the <Link /> component, open /app/ui/dashboard/nav-links.tsx, and import the Link component from next/link. Then, replace the 'a' tag with Link:
 
 - Hace que no se haga un full refresh, haciendo que la app se vea mas suave al tocar un link
 
@@ -441,3 +441,115 @@ The great thing about Partial Prerendering is that you don't need to change your
 - Learn how to use the Next.js APIs: useSearchParams, usePathname, and useRouter.
 
 - Implement search and pagination using URL search params.
+
+1. <Search/> allows users to search for specific invoices.
+2. <Pagination/> allows users to navigate between pages of invoices.
+3. <Table/> displays the invoices.
+
+Your search functionality will span the client and the server. When a user searches for an invoice on the client, the URL params will be updated, data will be fetched on the server, and the table will re-render on the server with the new data.
+
+There are a couple of benefits of implementing search with URL params:
+
+- Bookmarkable and Shareable URLs: Since the search parameters are in the URL, users can bookmark the current state of the application, including their search queries and filters, for future reference or sharing.
+- Server-Side Rendering and Initial Load: URL parameters can be directly consumed on the server to render the initial state, making it easier to handle server rendering.
+- Analytics and Tracking: Having search queries and filters directly in the URL makes it easier to track user behavior without requiring additional client-side logic.
+
+## Search functionality provided by next
+
+- useSearchParams- Allows you to access the parameters of the current URL. For example, the search params for this URL /dashboard/invoices?page=1&query=pending would look like this: {page: '1', query: 'pending'}.
+- usePathname - Lets you read the current URL's pathname. For example, for the route /dashboard/invoices, usePathname would return '/dashboard/invoices'.
+- useRouter - Enables navigation between routes within client components programmatically. There are multiple methods you can use.
+
+### useRouter()
+
+- router.push(href: string, { scroll: boolean }): Perform a client-side navigation to the provided route. Adds a new entry into the browser’s history stack.
+- router.replace(href: string, { scroll: boolean }): Perform a client-side navigation to the provided route without adding a new entry into the browser’s history stack.
+- router.refresh(): Refresh the current route. Making a new request to the server, re-fetching data requests, and re-rendering Server Components. The client will merge the updated React Server Component payload without losing unaffected client-side React (e.g. useState) or browser state (e.g. scroll position).
+- router.prefetch(href: string): Prefetch the provided route for faster client-side transitions.
+- router.back(): Navigate back to the previous route in the browser’s history stack.
+- router.forward(): Navigate forwards to the next page in the browser’s history stack.
+
+Here's a quick overview of the implementation steps:
+
+1. Capture the user's input.
+2. Update the URL with the search params.
+3. Keep the URL in sync with the input field.
+4. Update the table to reflect the search query.
+
+1 - Capture the user's input
+Go into the <Search> Component (/app/ui/search.tsx), and you'll notice:
+
+"use client" - This is a Client Component, which means you can use event listeners and hooks.
+<input> - This is the search input.
+Create a new handleSearch function, and add an onChange listener to the <input> element. onChange will invoke handleSearch whenever the input value changes.
+
+2 - Update the URL with the search params
+Import the useSearchParams hook from 'next/navigation', and assign it to a variable:
+
+```
+  function handleSearch(term: string) {
+    const params = new URLSearchParams(searchParams);
+    if (term) {
+      params.set("query", term);
+    } else {
+      params.delete("query");
+    }
+  }
+```
+
+Now that you have the query string. You can use Next.js's useRouter and usePathname hooks to update the URL.
+
+Import useRouter and usePathname from 'next/navigation', and use the replace method from useRouter() inside handleSearch:
+
+3 - Keeping the URL and input in sync
+To ensure the input field is in sync with the URL and will be populated when sharing, you can pass a
+defaultValue to input by reading from searchParams:
+
+```
+<input
+  className="peer block w-full rounded-md border border-gray-200 py-[9px] pl-10 text-sm outline-2 placeholder:text-gray-500"
+  placeholder={placeholder}
+  onChange={(e) => {
+    handleSearch(e.target.value);
+  }}
+  defaultValue={searchParams.get('query')?.toString()}
+/>
+```
+
+### defaultValue vs. value / Controlled vs. Uncontrolled
+
+If you're using state to manage the value of an input, you'd use the value attribute to make it a controlled component. This means React would manage the input's state.
+
+However, since you're not using state, you can use defaultValue. This means the native input will manage its own state. This is okay since you're saving the search query to the URL instead of state.
+
+### When to use the useSearchParams() hook vs. the searchParams prop?
+
+You might have noticed you used two different ways to extract search params. Whether you use one or the other depends on whether you're working on the client or the server.
+
+<Search> is a Client Component, so you used the useSearchParams() hook to access the params from the client.
+
+<Table> is a Server Component that fetches its own data, so you can pass the searchParams prop from the page to the component.
+As a general rule, if you want to read the params from the client, use the useSearchParams() hook as this avoids having to go back to the server.
+
+## Debouncing (optimization)
+
+You're updating the URL on every keystroke, and therefore querying your database on every keystroke! This isn't a problem as our application is small, but imagine if your application had thousands of users, each sending a new request to your database on each keystroke.
+
+Debouncing is a programming practice that limits the rate at which a function can fire. In our case, you only want to query the database when the user has stopped typing.
+
+How Debouncing Works:
+
+1. Trigger Event: When an event that should be debounced (like a keystroke in the search box) occurs, a timer starts.
+2. Wait: If a new event occurs before the timer expires, the timer is reset.
+3. Execution: If the timer reaches the end of its countdown, the debounced function is executed.
+
+You can implement debouncing in a few ways, including manually creating your own debounce function. To keep things simple, we'll use a library called use-debounce.
+
+Install use-debounce
+
+```
+pnpm i use-debounce
+```
+
+
+## Pagination
