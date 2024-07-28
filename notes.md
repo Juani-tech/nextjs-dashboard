@@ -551,5 +551,343 @@ Install use-debounce
 pnpm i use-debounce
 ```
 
-
 ## Pagination
+
+# Part 12, Mutating data
+
+- What React Server Actions are and how to use them to mutate data.
+
+- How to work with forms and Server Components.
+
+- Best practices for working with the native formData object, including type validation.
+
+- How to revalidate the client cache using the revalidatePath API.
+
+- How to create dynamic route segments with specific IDs.
+
+## What are Server Actions?
+
+React Server Actions allow you to run asynchronous code directly on the server. They eliminate the need to create API endpoints to mutate your data. Instead, you write asynchronous functions that execute on the server and can be invoked from your Client or Server Components.
+
+Security is a top priority for web applications, as they can be vulnerable to various threats. This is where Server Actions come in. They offer an effective security solution, protecting against different types of attacks, securing your data, and ensuring authorized access. Server Actions achieve this through techniques like POST requests, encrypted closures, strict input checks, error message hashing, and host restrictions, all working together to significantly enhance your app's safety.
+
+## Using forms with Server Actions
+
+In React, you can use the action attribute in the <form> element to invoke actions. The action will automatically receive the native FormData object, containing the captured data.
+
+```
+// Server Component
+export default function Page() {
+  // Action
+  async function create(formData: FormData) {
+    'use server';
+
+    // Logic to mutate data...
+  }
+
+  // Invoke the action using the "action" attribute
+  return <form action={create}>...</form>;
+}
+```
+
+## Next.js with Server Actions
+
+Server Actions are also deeply integrated with Next.js caching. When a form is submitted through a Server Action, not only can you use the action to mutate data, but you can also revalidate the associated cache using APIs like revalidatePath and revalidateTag.
+
+### Creating a server action
+
+```
+'use server';
+```
+
+By adding the 'use server', you mark all the exported functions within the file as Server Actions. These server functions can then be imported and used in Client and Server components.
+
+You can also write Server Actions directly inside Server Components by adding "use server" inside the action. But for this course, we'll keep them all organized in a separate file.
+
+Then, in your <Form> component, import the createInvoice from your actions.ts file. Add a action attribute to the <form> element, and call the createInvoice action.
+
+```
+import { customerField } from '@/app/lib/definitions';
+import Link from 'next/link';
+import {
+  CheckIcon,
+  ClockIcon,
+  CurrencyDollarIcon,
+  UserCircleIcon,
+} from '@heroicons/react/24/outline';
+import { Button } from '@/app/ui/button';
+import { createInvoice } from '@/app/lib/actions';
+
+export default function Form({
+  customers,
+}: {
+  customers: customerField[];
+}) {
+  return (
+    <form action={createInvoice}>
+      // ...
+  )
+}
+```
+
+Good to know: In HTML, you'd pass a URL to the action attribute. This URL would be the destination where your form data should be submitted (usually an API endpoint).
+
+However, in React, the action attribute is considered a special prop - meaning React builds on top of it to allow actions to be invoked.
+
+Behind the scenes, Server Actions create a POST API endpoint. This is why you don't need to create API endpoints manually when using Server Actions.
+
+actions.ts:
+
+```
+'use server';
+
+export async function createInvoice(formData: FormData) {
+  const rawFormData = {
+    customerId: formData.get('customerId'),
+    amount: formData.get('amount'),
+    status: formData.get('status'),
+  };
+  // Test it out:
+  console.log(rawFormData);
+}
+```
+
+Tip: If you're working with forms that have many fields, you may want to consider using the entries() method with JavaScript's Object.fromEntries(). For example:
+
+```
+const rawFormData = Object.fromEntries(formData.entries())
+```
+
+## Validations, zod
+
+To handle type validation, you have a few options. While you can manually validate types, using a type validation library can save you time and effort. For your example, we'll use Zod, a TypeScript-first validation library that can simplify this task for you.
+
+Storing values in cents
+It's usually good practice to store monetary values in cents in your database to eliminate JavaScript floating-point errors and ensure greater accuracy.
+
+Let's convert the amount into cents:
+
+```
+// ...
+export async function createInvoice(formData: FormData) {
+  const { customerId, amount, status } = CreateInvoice.parse({
+    customerId: formData.get('customerId'),
+    amount: formData.get('amount'),
+    status: formData.get('status'),
+  });
+  const amountInCents = amount * 100;
+}
+```
+
+### Revalidate (cache)
+
+Next.js has a Client-side Router Cache that stores the route segments in the user's browser for a time. Along with prefetching, this cache ensures that users can quickly navigate between routes while reducing the number of requests made to the server.
+
+Since you're updating the data displayed in the invoices route, you want to clear this cache and trigger a new request to the server. You can do this with the revalidatePath function from Next.js:
+
+Once the database has been updated, the /dashboard/invoices path will be revalidated, and fresh data will be fetched from the server.
+
+At this point, you also want to redirect the user back to the /dashboard/invoices page. You can do this with the redirect function from Next.js
+
+## Updating
+
+1. Create a Dynamic Route Segment with the invoice id
+   Next.js allows you to create Dynamic Route Segments when you don't know the exact segment name and want to create routes based on data. This could be blog post titles, product pages, etc. You can create dynamic route segments by wrapping a folder's name in square brackets. For example, [id], [post] or [slug].
+
+In your /invoices folder, create a new dynamic route called [id], then a new route called edit with a page.tsx file.
+
+Notice how it's similar to your /create invoice page, except it imports a different form (from the edit-form.tsx file). This form should be pre-populated with a defaultValue for the customer's name, invoice amount, and status. To pre-populate the form fields, you need to fetch the specific invoice using id.
+
+In addition to searchParams, page components also accept a prop called params which you can use to access the id. Update your <Page> component to receive the prop:
+
+4 - Pass the id to the Server Action
+Lastly, you want to pass the id to the Server Action so you can update the right record in your database. You cannot pass the id as an argument like so:
+
+/app/ui/invoices/edit-form.tsx
+
+```
+// Passing an id as argument won't work
+<form action={updateInvoice(id)}>
+```
+
+Instead, you can pass id to the Server Action using JS bind. This will ensure that any values passed to the Server Action are encoded.
+
+/app/ui/invoices/edit-form.tsx
+
+```
+
+// ...
+import { updateInvoice } from '@/app/lib/actions';
+
+export default function EditInvoiceForm({
+  invoice,
+  customers,
+}: {
+  invoice: InvoiceForm;
+  customers: CustomerField[];
+}) {
+  const updateInvoiceWithId = updateInvoice.bind(null, invoice.id);
+
+  return (
+    <form action={updateInvoiceWithId}>
+      <input type="hidden" name="id" value={invoice.id} />
+    </form>
+  );
+}
+
+```
+
+Note: Using a hidden input field in your form also works (e.g. <input type="hidden" name="id" value={invoice.id} />). However, the values will appear as full text in the HTML source, which is not ideal for sensitive data like IDs.
+
+# Part 13, Handling errors
+
+- How to use the special error.tsx file to catch errors in your route segments, and show a fallback UI to the user.
+
+- How to use the notFound function and not-found file to handle 404 errors (for resources that don’t exist).
+
+## Handling all errors with error.tsx
+
+The error.tsx file can be used to define a UI boundary for a route segment. It serves as a catch-all for unexpected errors and allows you to display a fallback UI to your users.
+
+There are a few things you'll notice about the code above:
+
+- "use client" - error.tsx needs to be a Client Component.
+  It accepts two props:
+- error: This object is an instance of JavaScript's native Error object.
+- reset: This is a function to reset the error boundary. When executed, the function will try to re-render the route segment.
+
+### Handling 404 errors with the notFound function
+
+Another way you can handle errors gracefully is by using the notFound function. While error.tsx is useful for catching all errors, notFound can be used when you try to fetch a resource that doesn't exist.
+
+For example, visit http://localhost:3000/dashboard/invoices/2e94d1ed-d220-449f-9f11-f0bbceed9645/edit.
+
+This is a fake UUID that doesn't exist in your database.
+
+You'll immediately see error.tsx kicks in because this is a child route of /invoices where error.tsx is defined.
+
+However, if you want to be more specific, you can show a 404 error to tell the user the resource they're trying to access hasn't been found.
+
+```
+// Goes into possible notFound info (query db)
+
+import { fetchInvoiceById, fetchCustomers } from '@/app/lib/data';
+import { updateInvoice } from '@/app/lib/actions';
+import { notFound } from 'next/navigation';
+
+export default async function Page({ params }: { params: { id: string } }) {
+  const id = params.id;
+  const [invoice, customers] = await Promise.all([
+    fetchInvoiceById(id),
+    fetchCustomers(),
+  ]);
+
+  if (!invoice) {
+    notFound();
+  }
+
+  // ...
+}
+```
+
+Perfect! <Page> will now throw an error if a specific invoice is not found. To show an error UI to the user. Create a not-found.tsx file inside the /edit folder.
+
+```
+import Link from 'next/link';
+import { FaceFrownIcon } from '@heroicons/react/24/outline';
+
+export default function NotFound() {
+  return (
+    <main className="flex h-full flex-col items-center justify-center gap-2">
+      <FaceFrownIcon className="w-10 text-gray-400" />
+      <h2 className="text-xl font-semibold">404 Not Found</h2>
+      <p>Could not find the requested invoice.</p>
+      <Link
+        href="/dashboard/invoices"
+        className="mt-4 rounded-md bg-blue-500 px-4 py-2 text-sm text-white transition-colors hover:bg-blue-400"
+      >
+        Go Back
+      </Link>
+    </main>
+  );
+}
+```
+
+That's something to keep in mind, notFound will take precedence over error.tsx, so you can reach out for it when you want to handle more specific errors!
+
+To learn more about error handling in Next.js, check out the following documentation:
+
+Error Handling
+error.js API Reference
+notFound() API Reference
+not-found.js API Reference
+
+# Part 14, Improving accesibility (server form validation)
+
+- How to use eslint-plugin-jsx-a11y with Next.js to implement accessibility best practices.
+
+- How to implement server-side form validation.
+
+- How to use the React useActionState hook to handle form errors, and display them to the user.
+
+## Using the ESLint accessibility plugin in Next.js
+
+Next.js includes the eslint-plugin-jsx-a11y plugin in its ESLint config to help catch accessibility issues early. For example, this plugin warns if you have images without alt text, use the aria-\* and role attributes incorrectly, and more.
+
+Optionally, if you would like to try this out, add next lint as a script in your package.json file:
+
+```
+"scripts": {
+    "build": "next build",
+    "dev": "next dev",
+    "start": "next start",
+    "lint": "next lint"
+},
+```
+
+Improving form accessibility
+There are three things we're already doing to improve accessibility in our forms:
+
+- Semantic HTML: Using semantic elements (<input>, <option>, etc) instead of <div>. This allows assistive technologies (AT) to focus on the input elements and provide appropriate contextual information to the user, making the form easier to navigate and understand.
+- Labelling: Including <label> and the htmlFor attribute ensures that each form field has a descriptive text label. This improves AT support by providing context and also enhances usability by allowing users to click on the label to focus on the corresponding input field.
+- Focus Outline: The fields are properly styled to show an outline when they are in focus. This is critical for accessibility as it visually indicates the active element on the page, helping both keyboard and screen reader users to understand where they are on the form. You can verify this by pressing tab.
+
+## Client-Side validation
+
+There are a couple of ways you can validate forms on the client. The simplest would be to rely on the form validation provided by the browser by adding the required attribute to the <input> and <select> elements in your forms.
+
+## Server-Side validation
+
+By validating forms on the server, you can:
+
+Ensure your data is in the expected format before sending it to your database.
+Reduce the risk of malicious users bypassing client-side validation.
+Have one source of truth for what is considered valid data.
+In your create-form.tsx component, import the useActionState hook from react. Since useActionState is a hook, you will need to turn your form into a Client Component using "use client" directive
+
+Inside your Form Component, the useActionState hook:
+
+- Takes two arguments: (action, initialState).
+- Returns two values: [state, formAction] - the form state, and a function to be called when the form is submitted.
+
+### Cuando hay un input (de cualquier tipo)
+
+```
+aria-describedby="x-error"
+```
+
+```
+// En este caso para el error de status
+  <div id="status-error" aria-live="polite" aria-atomic="true">
+    {state.errors?.status &&
+      state.errors.status.map((error: string) => (
+        <p className="mt-2 text-sm text-red-500" key={error}>
+          {error}
+        </p>
+      ))}
+  </div>
+```
+
+- aria-describedby="customer-error": This establishes a relationship between the select element and the error message container. It indicates that the container with id="customer-error" describes the select element. Screen readers will read this description when the user interacts with the select box to notify them of errors.
+- id="customer-error": This id attribute uniquely identifies the HTML element that holds the error message for the select input. This is necessary for aria-describedby to establish the relationship.
+- aria-live="polite": The screen reader should politely notify the user when the error inside the div is updated. When the content changes (e.g. when a user corrects an error), the screen reader will announce these changes, but only when the user is idle so as not to interrupt them.
