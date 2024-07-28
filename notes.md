@@ -891,3 +891,249 @@ aria-describedby="x-error"
 - aria-describedby="customer-error": This establishes a relationship between the select element and the error message container. It indicates that the container with id="customer-error" describes the select element. Screen readers will read this description when the user interacts with the select box to notify them of errors.
 - id="customer-error": This id attribute uniquely identifies the HTML element that holds the error message for the select input. This is necessary for aria-describedby to establish the relationship.
 - aria-live="polite": The screen reader should politely notify the user when the error inside the div is updated. When the content changes (e.g. when a user corrects an error), the screen reader will announce these changes, but only when the user is idle so as not to interrupt them.
+
+# Part 15, Authentication
+
+- What is authentication.
+
+- How to add authentication to your app using NextAuth.js.
+
+- How to use Middleware to redirect users and protect your routes.
+
+- How to use React's useActionState to handle pending states and form errors.
+
+## Authentication vs. Authorization
+
+In web development, authentication and authorization serve different roles:
+
+    Authentication is about making sure the user is who they say they are. You're proving your identity with something you have like a username and password.
+    Authorization is the next step. Once a user's identity is confirmed, authorization decides what parts of the application they are allowed to use.
+
+So, authentication checks who you are, and authorization determines what you can do or access in the application.
+
+## NextAuth.js
+
+We will be using NextAuth.js
+to add authentication to your application. NextAuth.js abstracts away much of the complexity involved in managing sessions, sign-in and sign-out, and other aspects of authentication. While you can manually implement these features, the process can be time-consuming and error-prone. NextAuth.js simplifies the process, providing a unified solution for auth in Next.js applications.
+
+```
+pnpm i next-auth@beta
+```
+
+Here, you're installing the beta version of NextAuth.js, which is compatible with Next.js 14.
+
+Next, generate a secret key for your application. This key is used to encrypt cookies, ensuring the security of user sessions. You can do this by running the following command in your terminal:
+
+```
+openssl rand -base64 32
+```
+
+Then, in your .env file, add your generated key to the AUTH_SECRET variable:
+
+```
+AUTH_SECRET=your-secret-key
+```
+
+For auth to work in production, you'll need to update your environment variables in your Vercel project too. Check out this guide
+on how to add environment variables on Vercel.
+
+Adding the pages option
+
+Create an auth.config.ts file at the root of our project that exports an authConfig object. This object will contain the configuration options for NextAuth.js. For now, it will only contain the pages option
+
+You can use the pages option to specify the route for custom sign-in, sign-out, and error pages. This is not required, but by adding signIn: '/login' into our pages option, the user will be redirected to our custom login page, rather than the NextAuth.js default page.
+
+## Protecting your routes with Next.js Middleware
+
+Next, add the logic to protect your routes. This will prevent users from accessing the dashboard pages unless they are logged in.
+
+auth.config.ts:
+
+```
+import type { NextAuthConfig } from 'next-auth';
+
+export const authConfig = {
+  pages: {
+    signIn: '/login',
+  },
+  callbacks: {
+    authorized({ auth, request: { nextUrl } }) {
+      const isLoggedIn = !!auth?.user;
+      const isOnDashboard = nextUrl.pathname.startsWith('/dashboard');
+      if (isOnDashboard) {
+        if (isLoggedIn) return true;
+        return false; // Redirect unauthenticated users to login page
+      } else if (isLoggedIn) {
+        return Response.redirect(new URL('/dashboard', nextUrl));
+      }
+      return true;
+    },
+  },
+  providers: [], // Add providers with an empty array for now
+} satisfies NextAuthConfig;
+
+```
+
+Next, you will need to import the authConfig object into a Middleware file. In the root of your project, create a file called middleware.ts and paste the following code
+
+```
+import NextAuth from 'next-auth';
+import { authConfig } from './auth.config';
+
+export default NextAuth(authConfig).auth;
+
+export const config = {
+  // https://nextjs.org/docs/app/building-your-application/routing/middleware#matcher
+  matcher: ['/((?!api|_next/static|_next/image|.*\\.png$).*)'],
+};
+
+```
+
+Here you're initializing NextAuth.js with the authConfig object and exporting the auth property. You're also using the matcher option from Middleware to specify that it should run on specific paths.
+
+The advantage of employing Middleware for this task is that the protected routes will not even start rendering until the Middleware verifies the authentication, enhancing both the security and performance of your application.
+
+However, you will need to create a separate file for the bcrypt package. This is because bcrypt relies on Node.js APIs not available in Next.js Middleware.
+
+Create a new file called auth.ts that spreads your authConfig object:
+
+auth.js:
+
+```
+import NextAuth from 'next-auth';
+import { authConfig } from './auth.config';
+
+export const { auth, signIn, signOut } = NextAuth({
+  ...authConfig,
+});
+```
+
+Adding the Credentials provider
+
+Next, you will need to add the providers option for NextAuth.js. providers is an array where you list different login options such as Google or GitHub. For this course, we will focus on using the Credentials provider
+
+only.
+
+The Credentials provider allows users to log in with a username and a password.
+/auth.ts
+
+```
+import NextAuth from 'next-auth';
+import { authConfig } from './auth.config';
+import Credentials from 'next-auth/providers/credentials';
+
+export const { auth, signIn, signOut } = NextAuth({
+  ...authConfig,
+  providers: [Credentials({})],
+});
+```
+
+Good to know:
+
+Although we're using the Credentials provider, it's generally recommended to use alternative providers such as OAuth
+or email
+providers. See the NextAuth.js docs
+for a full list of options.
+
+Adding the sign in functionality
+
+You can use the authorize function to handle the authentication logic. Similarly to Server Actions, you can use zod to validate the email and password before checking if the user exists in the database:
+/auth.ts
+
+```
+import NextAuth from 'next-auth';
+import Credentials from 'next-auth/providers/credentials';
+import { authConfig } from './auth.config';
+import { z } from 'zod';
+import { sql } from '@vercel/postgres';
+import type { User } from '@/app/lib/definitions';
+import bcrypt from 'bcrypt';
+
+async function getUser(email: string): Promise<User | undefined> {
+  try {
+    const user = await sql<User>`SELECT * FROM users WHERE email=${email}`;
+    return user.rows[0];
+  } catch (error) {
+    console.error('Failed to fetch user:', error);
+    throw new Error('Failed to fetch user.');
+  }
+}
+
+export const { auth, signIn, signOut } = NextAuth({
+  ...authConfig,
+  providers: [
+    Credentials({
+      async authorize(credentials) {
+        const parsedCredentials = z
+          .object({ email: z.string().email(), password: z.string().min(6) })
+          .safeParse(credentials);
+
+        if (parsedCredentials.success) {
+          const { email, password } = parsedCredentials.data;
+          const user = await getUser(email);
+          if (!user) return null;
+        }
+
+        return null;
+      },
+    }),
+  ],
+});
+```
+
+## Updating the login form
+
+Now you need to connect the auth logic with your login form. In your actions.ts file, create a new action called authenticate. This action should import the signIn function from auth.ts
+
+## Adding the logout functionality
+
+To add the logout functionality to <SideNav />, call the signOut function from auth.ts in your <form> element
+
+Now, try it out. You should be able to log in and out of your application using the following credentials:
+
+    Email: user@nextmail.com
+    Password: 123456
+
+# Part 16, metadata (improve SEO)
+
+## Why is metadata important?
+
+Metadata plays a significant role in enhancing a webpage's SEO, making it more accessible and understandable for search engines and social media platforms. Proper metadata helps search engines effectively index webpages, improving their ranking in search results. Additionally, metadata like Open Graph improves the appearance of shared links on social media, making the content more appealing and informative for users.
+
+### Title Metadata: Responsible for the title of a webpage that is displayed on the browser tab. It's crucial for SEO as it helps search engines understand what the webpage is about.
+
+<title>Page Title</title>
+
+### Description Metadata: This metadata provides a brief overview of the webpage content and is often displayed in search engine results.
+
+<meta name="description" content="A brief description of the page content." />
+
+### Keyword Metadata: This metadata includes the keywords related to the webpage content, helping search engines index the page.
+
+<meta name="keywords" content="keyword1, keyword2, keyword3" />
+
+### Open Graph Metadata: This metadata enhances the way a webpage is represented when shared on social media platforms, providing information such as the title, description, and preview image.
+
+<meta property="og:title" content="Title Here" />
+<meta property="og:description" content="Description Here" />
+<meta property="og:image" content="image_url_here" />
+
+### Favicon Metadata: This metadata links the favicon (a small icon) to the webpage, displayed in the browser's address bar or tab.
+
+<link rel="icon" href="path/to/favicon.ico" />
+
+## Adding metadata
+
+Next.js has a Metadata API that can be used to define your application metadata. There are two ways you can add metadata to your application:
+
+    Config-based: Export a static metadata object or a dynamic generateMetadata function in a layout.js or page.js file.
+
+    File-based: Next.js has a range of special files that are specifically used for metadata purposes:
+        favicon.ico, apple-icon.jpg, and icon.jpg: Utilized for favicons and icons
+        opengraph-image.jpg and twitter-image.jpg: Employed for social media images
+        robots.txt: Provides instructions for search engine crawling
+        sitemap.xml: Offers information about the website's structure
+
+You have the flexibility to use these files for static metadata, or you can generate them programmatically within your project.
+
+With both these options, Next.js will automatically generate the relevant <head> elements for your pages.
